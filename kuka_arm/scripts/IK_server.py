@@ -51,7 +51,8 @@ def get_transformation_matrix(alpha, a, d, q, dh_params):
 
 
 def get_joints_1_3(WC):
-    # Avoiding re-eval of variables in loop
+    # Avoiding re-eval of costly sympy variables inside loop
+    # those parameters are constants anyway
     a1, a2, a3 = 0.35, 1.25, -0.054
     d1, d4 = 0.75, 1.5
 
@@ -74,7 +75,7 @@ def get_joints_1_3(WC):
     return theta1, theta2, theta3
 
 
-def get_joints_3_6(rot_matrix):
+def get_joints_4_6(rot_matrix):
     theta5 = atan2(sqrt(rot_matrix[0, 2] ** 2 + rot_matrix[2, 2] ** 2), rot_matrix[1, 2])
     if sin(theta5) < 0:
         theta4 = atan2(-rot_matrix[2, 2], rot_matrix[0, 2])
@@ -128,7 +129,7 @@ def handle_calculate_IK(req):
 
         # Initialize service response
         joint_trajectory_list = []
-        t4, t5, t6 = 0.0, 0.0, 0.0
+        t4, t5, t6 = None, None, None
         for x in xrange(0, len(req.poses)):
 
             # IK code starts here
@@ -154,29 +155,27 @@ def handle_calculate_IK(req):
             theta1, theta2, theta3 = get_joints_1_3(WC)
 
             # We only substitute and eval here
-            # R0_3 = T0_1[0:3, 0:3] * T1_2[0:3, 0:3] * T2_3[0:3, 0:3]
-            R0_3 = T0_3[0:3, :3]  # Reusing already calculated first 3 joints instead of multipy + inverse
+            R0_3 = T0_3[0:3, :3]  # Reusing already calculated first 3 joints outside the loop, instead of costly multipy + inverse
             R0_3 = R0_3.evalf(subs={q1: theta1, q2: theta2, q3: theta3})
             R3_6 = R0_3.inv("LU") * R_EE
 
             # Euler angles based on the rotation matrix
             # if x > 3 and x % 3 == 0 < len(req.poses) - 4:
-            if x > .75*len(req.poses):
-                # Skipping calculating proper angles for first half of the trajectory
-                # What could go wrong?
-                theta4, theta5, theta6 = get_joints_3_6(rot_matrix=R3_6)
-                t4, t5, t6 = theta4, theta5, theta6
+            theta4, theta5, theta6 = get_joints_4_6(rot_matrix=R3_6)
+            # if x == 0:
+            #     # Remember initial position of WC
+            #     t4, t5, t6 = theta4, theta5, theta6
+            #
+            # if x > .70*len(req.poses):
+            #     # for the last 70% of the planned trajectory, calculate accurate angles
+            #     # A hacky way to speed things up
+            #     rospy.loginfo("Calculating exact angles for t4-6, at step {0}".format(x))
+            #     t4, t5, t6 = theta4, theta5, theta6
 
-            else:
-                # skip moving EE/Wrist for each second step after the first 3,
-                # less accuracy but faster
-                # absolutely use in your production pipeline without caution!
-                rospy.loginfo("skipping calculation for step {0}".format(x))
-                theta4, theta5, theta6 = t4, t5, t6
-
+            t4, t5, t6 = theta4, theta5, theta6
             # Populate response for the IK request
             # In the next line replace theta1,theta2...,theta6 by your joint angle variables
-            joint_trajectory_point.positions = [theta1, theta2, theta3, theta4, theta5, theta6]
+            joint_trajectory_point.positions = [theta1, theta2, theta3, t4, t5, t6]
             joint_trajectory_list.append(joint_trajectory_point)
 
         rospy.loginfo("length of Joint Trajectory List: %s" % len(joint_trajectory_list))
