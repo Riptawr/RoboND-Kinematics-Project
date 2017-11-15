@@ -136,35 +136,19 @@ To get the homogeneous transform from base to gripper link (T0_1 -> T4_5) we com
 
 #### 3. Decouple Inverse Kinematics problem into Inverse Position Kinematics and inverse Orientation Kinematics; doing so derive the equations to calculate all individual joint angles.
 
-Conceptually, the approach consists of first moving the wrist center (the last three joints, theta4-theta6, form a "spherical" wrist) to a position,
+Conceptually, the approach consists of first moving the wrist center to a position,
  where the task is inside the manipulators' work space (the positioning step),
-with the second step being to orient end-effector towards the object correctly, using the wrist (the orientation step).
+with the second step being to orient end-effector towards the object correctly, using the spherical wrist (the orientation step).
 
-Since the planner already provides us with the poses for each step,
- we can extract necessary **positions along the axis (px, py, pz)** and **orientation (roll, pitch, yaw)** from the request
- and apply them to the rotation matrix, using the transformation matrices of the first three joints (T0_3) only (to save cpu cycles)
-
- Note that there is no correlation between gazeboo parameters (from the planner) and DH parameters,
- so a correction function was included into the rotation matrix function, to account for that, as hinted at in the lecture material:
-
-```python
-     R_error_correction = R_z.subs(y, radians(180)) * R_y.subs(p, radians(-90))
-```
-The correction requires rotating the gripper's coordinate frame by 180 degrees along Z and -90 degrees along y.
-
-
-Since the IK problem can be divided into two steps. I opted to create separate functions for positioning and orientation using sympy.
-
-Given the wrist center position matrix, joint angles for first three links can be calculates as a right triangle:
+To calculate positioning, it is sufficient to consider only the first three joints, since they will move the wrist center:
 
 ![kr210-ik-top-down][image4]
 
 ![kr210-ik-side][image5]
 
+The calculations to derive the angles can be obtained as follows:
 ```python
 def get_joints_1_3(WC):
-    # Avoiding re-eval of costly sympy variables inside loop
-    # those parameters are constants anyway
     a1, a2, a3 = 0.35, 1.25, -0.054
     d1, d4 = 0.75, 1.5
 
@@ -189,54 +173,58 @@ def get_joints_1_3(WC):
 ```
 
 
-The wrist center position and orientation are calculated as follows:
+Next we solve the orientation step by using the angles above to derive the rotation matrix for the gripper:
 
 ```python
-def get_joints_4_6(rot_matrix):
-    theta5 = atan2(sqrt(rot_matrix[0, 2] ** 2 + rot_matrix[2, 2] ** 2), rot_matrix[1, 2])
-    if sin(theta5) < 0:
-        theta4 = atan2(-rot_matrix[2, 2], rot_matrix[0, 2])
-        theta6 = atan2(rot_matrix[1, 1], -rot_matrix[1, 0])
-    else:
-        theta4 = atan2(rot_matrix[2, 2], -rot_matrix[0, 2])
-        theta6 = atan2(-rot_matrix[1, 1], rot_matrix[1, 0])
+def get_rotation_matrix():
+    r, p, y = symbols('r p y')
+    R_x = Matrix([[1, 0, 0],
+                  [0, cos(r), -sin(r)],
+                  [0, sin(r), cos(r)]])
 
-    return theta4, theta5, theta6
+    R_y = Matrix([[cos(p), 0, sin(p)],
+                  [0, 1, 0],
+                  [-sin(p), 0, cos(p)]])
+
+    R_z = Matrix([[cos(y), -sin(y), 0],
+                  [sin(y), cos(y), 0],
+                  [0, 0, 1]])
+
+    R_E = R_z * R_y * R_x
+    # Compensate for rotation discrepancy between DH parameters and Gazebo
+    R_error_correction = R_z.subs(y, radians(180)) * R_y.subs(p, radians(-90))
+    R_E = R_E * R_error_correction
+    return R_E
 ```
+ Note that there is no correlation between gazeboo parameters (from the planner) and DH parameters,
+ therefore we apply error correction by rotating the gripper's coordinate frame by 180 degrees along Z and -90 degrees along Y.
 
-```python
+The rotation matrix depends on the the angles T0_3, calculated beforehand,
+ combined with the current roll, pitch and yaw of the gripper.
+
+Since the planner already provides us with the poses for each step in the request,
+ we can extract necessary **positions along the axis (px, py, pz)** and **orientation (roll, pitch, yaw)**
+ and use them to derive the euler angles, by creating a transformation matrix from positions of the gripper and the rotation above:
+
             R_EE = R_E.subs({"r": roll, "p": pitch, "y": yaw})
             End_effector = Matrix([[px], [py], [pz]])
             WC = End_effector - 0.303 * R_EE[:, 2]
-
-            # Calculate joint angles using Geometric IK method
-            theta1, theta2, theta3 = get_joints_1_3(WC)
-
-            # We only substitute and eval here
-            R0_3 = T0_3[0:3, :3]  # Reusing already calculated first 3 joints outside the loop, instead of costly multipy + inverse
-            R0_3 = R0_3.evalf(subs={q1: theta1, q2: theta2, q3: theta3})
-            R3_6 = R0_3.inv("LU") * R_EE
-```
-
-With the (already corrected) rotation matrix, retrieving the euler angles is done via the function above:
-```python
-theta4, theta5, theta6 = get_joints_4_6(rot_matrix=R3_6)
-```
-
 
 
 ### Project Implementation
 
 #### 1. Fill in the `IK_server.py` file with properly commented python code for calculating Inverse Kinematics based on previously performed Kinematic Analysis. Your code must guide the robot to successfully complete 8/10 pick and place cycles. Briefly discuss the code you implemented and your results. 
 
-Regular attempts are slow but precise, with lots of wrist-center re-orientations. Errors are only made if the gripper didn't have enough time to close
+Regular attempts are slow but precise, with lots of wrist re-orientations. Errors are only made if the gripper didn't have enough time to close
 before the next movement (leading to cans spawning next to each other over the next runs)
 ![alt text][image1]
 
 Attempts with optimizing the trajectory
-(remembering WC orientation until the last 25% of the planed trajectory)
-While the speed is higher and movements seem more fluid, not orienting the wrist center, based
+(remembering WC orientation until the last 25% of the planed trajectory and only executing commands on joints 1-5)
+While the speed is higher and movements seem more fluid, not orienting the wrist, based
 on some conditions, depends on the task and cannot be generalized safely,
 leading sometimes to flipping the can over:
 ![alt text][image2]
 
+Further research could include deriving safe margins instead of calculating exact position, to make the movements more fluid
+while not introducing potentially hazardous trajectories, but would probably need a re-thinking of the IK formulas used.
