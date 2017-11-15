@@ -56,8 +56,83 @@ def get_transformation_matrix(alpha, a, d, q, dh_params):
 Since the function is general, we can compose it multiple times, like composition of transformations in math.
  Such compositions are denoted **Ti_j** in the code - where i and j correlate to the starting and ending link of the DH table of said composition,
   e.g. **T0_3** for the composition **link 0 -> 1 -> 2 ->3.**
-This way we can get the homogeneous transform from base to gripper, as required for the project.
 
+The resulting transformation matrices along each joint look as follows:
+
+```python
+
+T0_1
+⎡cos(q₁)  -sin(q₁)  0   0  ⎤
+⎢                          ⎥
+⎢sin(q₁)  cos(q₁)   0   0  ⎥
+⎢                          ⎥
+⎢   0        0      1  0.75⎥
+⎢                          ⎥
+⎣   0        0      0   1  ⎦
+
+T1_2
+⎡cos(q₂ - 0.5⋅π)   -sin(q₂ - 0.5⋅π)  0  0.35⎤
+⎢                                           ⎥
+⎢       0                 0          1   0  ⎥
+⎢                                           ⎥
+⎢-sin(q₂ - 0.5⋅π)  -cos(q₂ - 0.5⋅π)  0   0  ⎥
+⎢                                           ⎥
+⎣       0                 0          0   1  ⎦
+
+T2_3
+⎡cos(q₃)  -sin(q₃)  0  1.25⎤
+⎢                          ⎥
+⎢sin(q₃)  cos(q₃)   0   0  ⎥
+⎢                          ⎥
+⎢   0        0      1   0  ⎥
+⎢                          ⎥
+⎣   0        0      0   1  ⎦
+
+T3_4
+⎡cos(q₄)   -sin(q₄)  0  -0.054⎤
+⎢                             ⎥
+⎢   0         0      1   1.5  ⎥
+⎢                             ⎥
+⎢-sin(q₄)  -cos(q₄)  0    0   ⎥
+⎢                             ⎥
+⎣   0         0      0    1   ⎦
+
+T4_5
+⎡cos(q₅)  -sin(q₅)  0   0⎤
+⎢                        ⎥
+⎢   0        0      -1  0⎥
+⎢                        ⎥
+⎢sin(q₅)  cos(q₅)   0   0⎥
+⎢                        ⎥
+⎣   0        0      0   1⎦
+
+T5_6
+⎡cos(q₆)   -sin(q₆)  0  0⎤
+⎢                        ⎥
+⎢   0         0      1  0⎥
+⎢                        ⎥
+⎢-sin(q₆)  -cos(q₆)  0  0⎥
+⎢                        ⎥
+⎣   0         0      0  1⎦
+
+T6_E
+⎡1  0  0    0  ⎤
+⎢              ⎥
+⎢0  1  0    0  ⎥
+⎢              ⎥
+⎢0  0  1  0.303⎥
+⎢              ⎥
+⎣0  0  0    1  ⎦
+
+```
+
+To get the homogeneous transform from base to gripper link (T0_1 -> T4_5) we compose the matrices in sequence.
+```python
+⎡(sin(q₁)⋅sin(q₄) + sin(q₂ + q₃)⋅cos(q₁)⋅cos(q₄))⋅cos(q₅) + sin(q₅)⋅cos(q₁)⋅cos(q₂ + q₃)  -(sin(q₁)⋅sin(q₄) + sin(q₂ + q₃)⋅cos(q₁)⋅cos(q₄))⋅sin(q₅) + cos(q₁)⋅cos(q₅)⋅cos(q₂ + q₃)  -sin(q₁)⋅cos(q₄) + sin(q₄)⋅sin(q₂ + q₃)⋅cos(q₁)  (1.25⋅sin(q₂) - 0.054⋅sin(q₂ + q₃) + 1.5⋅cos(q₂ + q₃) + 0.35)⋅cos(q₁)⎤
+⎢(sin(q₁)⋅sin(q₂ + q₃)⋅cos(q₄) - sin(q₄)⋅cos(q₁))⋅cos(q₅) + sin(q₁)⋅sin(q₅)⋅cos(q₂ + q₃)  (-sin(q₁)⋅sin(q₂ + q₃)⋅cos(q₄) + sin(q₄)⋅cos(q₁))⋅sin(q₅) + sin(q₁)⋅cos(q₅)⋅cos(q₂ + q₃)  sin(q₁)⋅sin(q₄)⋅sin(q₂ + q₃) + cos(q₁)⋅cos(q₄)   (1.25⋅sin(q₂) - 0.054⋅sin(q₂ + q₃) + 1.5⋅cos(q₂ + q₃) + 0.35)⋅sin(q₁)⎥
+⎢                 -sin(q₅)⋅sin(q₂ + q₃) + cos(q₄)⋅cos(q₅)⋅cos(q₂ + q₃)                                      -sin(q₅)⋅cos(q₄)⋅cos(q₂ + q₃) - sin(q₂ + q₃)⋅cos(q₅)                                 sin(q₄)⋅cos(q₂ + q₃)                    -1.5⋅sin(q₂ + q₃) + 1.25⋅cos(q₂) - 0.054⋅cos(q₂ + q₃) + 0.75     ⎥
+⎣                                           0                                                                                        0                                                                     0                                                           1                                  ⎦
+```
 
 #### 3. Decouple Inverse Kinematics problem into Inverse Position Kinematics and inverse Orientation Kinematics; doing so derive the equations to calculate all individual joint angles.
 
@@ -113,7 +188,8 @@ def get_joints_1_3(WC):
     return theta1, theta2, theta3
 ```
 
-The wrist center position is calculated in a similar fashion:
+
+The wrist center position and orientation are calculated as follows:
 
 ```python
 def get_joints_4_6(rot_matrix):
@@ -128,7 +204,6 @@ def get_joints_4_6(rot_matrix):
     return theta4, theta5, theta6
 ```
 
-After the transformations are done outside the loop, we calculate the spherical wrist's rotation matrix to get the orientation:
 ```python
             R_EE = R_E.subs({"r": roll, "p": pitch, "y": yaw})
             End_effector = Matrix([[px], [py], [pz]])
