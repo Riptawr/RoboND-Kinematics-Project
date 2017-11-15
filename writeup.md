@@ -216,7 +216,7 @@ combined with their respective rotations
 - we already solved for the first three angles
 - we also calculated the homogeneous transform from base to gripper link
 
-Therefore we can evaluate the last three angles via the following:
+Therefore we can evaluate the last three angles getting the missing rotation matrix as follows:
 ```python
 R3_6 = R0_3.inv("LU") * R_EE
 ```
