@@ -129,7 +129,7 @@ def handle_calculate_IK(req):
 
         # Initialize service response
         joint_trajectory_list = []
-        t4, t5, t6 = None, None, None
+        t4, t5, t6 = 0, 0, 0
         for x in xrange(0, len(req.poses)):
 
             # IK code starts here
@@ -160,18 +160,21 @@ def handle_calculate_IK(req):
             R3_6 = R0_3.inv("LU") * R_EE
 
             # Euler angles based on the rotation matrix
-            # if x > 3 and x % 3 == 0 < len(req.poses) - 4:
-            theta4, theta5, theta6 = get_joints_4_6(rot_matrix=R3_6)
-            # if x == 0:
-            #     # Remember initial position of WC
-            #     t4, t5, t6 = theta4, theta5, theta6
-            #
-            # if x > .70*len(req.poses):
-            #     # for the last 70% of the planned trajectory, calculate accurate angles
-            #     # A hacky way to speed things up
-            #     rospy.loginfo("Calculating exact angles for t4-6, at step {0}".format(x))
-            #     t4, t5, t6 = theta4, theta5, theta6
+            theta5 = atan2(sqrt(R3_6[0, 2] ** 2 + R3_6[2, 2] ** 2), R3_6[1, 2])
+            if sin(theta5) < 0:
+                theta4 = atan2(-R3_6[2, 2], R3_6[0, 2])
+                theta6 = atan2(R3_6[1, 1], -R3_6[1, 0])
+            else:
+                theta4 = atan2(R3_6[2, 2], -R3_6[0, 2])
+                theta6 = atan2(-R3_6[1, 1], R3_6[1, 0])
 
+            if x < len(req.poses) - 6:
+                theta6 = t6
+            else:
+                t6 = theta6
+
+
+            rospy.loginfo("Debug: {0},{1},{2}".format(theta4, theta5, theta6))
             t4, t5, t6 = theta4, theta5, theta6
             # Populate response for the IK request
             # In the next line replace theta1,theta2...,theta6 by your joint angle variables

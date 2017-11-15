@@ -4,7 +4,7 @@
 
 [image1]: ./misc_images/result.png
 [image2]: ./misc_images/attempt_at_optimizing.png
-[image3]: ./misc_images/kr210-dh.jpg
+[image3]: ./misc_images/kuka-dh.png
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/972/view) Points
 ### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
@@ -15,21 +15,24 @@
 ### Kinematic Analysis
 #### 1. Run the forward_kinematics demo and evaluate the kr210.urdf.xacro file to perform kinematic analysis of Kuka KR210 robot and derive its DH parameters.
 
-Since we got the kr210.urdf.xarco file with a description of the robot model and the kr210 consists of mostly spherical joints,
-deriving the DH parameters boils down to finding the offsets, link length and the angle of the joint, relative to the previous ones.
+Since we got the kr210.urdf.xarco file with a description of the robot model and the kr210 consists of 6, linearly connected, revolute joints,
+deriving the DH parameters boils down to finding the offsets, link length and the angle of the joint, relative to the previous ones,
+ as `a` and `alpha` do not change between orientations.
+ This means we can express all poses with variations of `d` and `theta`.
+
 
 ![kr210-shematic][image3]
 
-Below are the modified dh parameters:
+Below are the modified dh parameters derived from the drawing:
 
 n   | alpha   | a     | d     | theta(n)
 --- | ---     | ---   | ---   | ---
 0   | 0       | 0     | -     | -
-1   | -pi / 2.| .35   | .75   | q1
-2   | 0       | 1.25  | 0     | q2 - pi / 2.
-3   | -pi / 2 | -0.054| 0     | q3
-4   | pi / 2. | 0     | 1.5   | q4
-5   | -pi / 2 | 0     | 0     | q5
+1   | -90     | .35   | .75   | q1
+2   | 0       | 1.25  | 0     | q2
+3   | -90     | -0.054| 0     | q3
+4   |  90     | 0     | 1.5   | q4
+5   | -90     | 0     | 0     | q5
 6   | 0       | 0     | .303  | q6
 
 
@@ -51,12 +54,14 @@ def get_transformation_matrix(alpha, a, d, q, dh_params):
 Since the function is general, we can compose it multiple times, like composition of transformations in math.
  Such compositions are denoted **Ti_j** in the code - where i and j correlate to the starting and ending link of the DH table of said composition,
   e.g. **T0_3** for the composition **link 0 -> 1 -> 2 ->3.**
+This way we can get the homogeneous transform from base to gripper, as required for the project.
 
 
 #### 3. Decouple Inverse Kinematics problem into Inverse Position Kinematics and inverse Orientation Kinematics; doing so derive the equations to calculate all individual joint angles.
 
-Conceptually, the approach consists of first moving the wrist center (the last three joints) to a position, where the task is inside the manipulators' work space,
-with the second step being to orient end-effector towards the object correctly, using the wrist.
+Conceptually, the approach consists of first moving the wrist center (the last three joints, theta4-theta6, form a "spherical" wrist) to a position,
+ where the task is inside the manipulators' work space (the positioning step),
+with the second step being to orient end-effector towards the object correctly, using the wrist (the orientation step).
 
 Since the planner already provides us with the poses for each step,
  we can extract necessary **positions along the axis (px, py, pz)** and **orientation (roll, pitch, yaw)** from the request
@@ -68,9 +73,10 @@ Since the planner already provides us with the poses for each step,
 ```python
      R_error_correction = R_z.subs(y, radians(180)) * R_y.subs(p, radians(-90))
 ```
+The correction requires rotating the gripper's coordinate frame by 180 degrees along Z and -90 degrees along y.
 
-Since the IK problem can be divided into two functions on paper, similar functions can be created in code using sympy.
-I leave out the paper calculations for brevity, since code comments go into performance optimization details, as well.
+
+Since the IK problem can be divided into two steps. I opted to create separate functions for positioning and orientation using sympy.
 
 Given the wrist center position matrix, joint angles for first three links can be calculates as a right triangle:
 ```python
@@ -83,7 +89,7 @@ def get_joints_1_3(WC):
     # y and x position of the wrist center
     theta1 = atan2(WC[1], WC[0])
 
-    # Using proper triangle terms, the references are harder to read without the drawing, see writeup.
+    # Using proper triangle terms for readability
     line_ab = a2  # empirically measured on the RViz model
     line_bc = sqrt(d4**2 + a3**2)
     line_ca = sqrt((sqrt(WC[0]**2 + WC[1]**2) - a1)**2 + (WC[2] - d1)**2)
@@ -100,7 +106,7 @@ def get_joints_1_3(WC):
     return theta1, theta2, theta3
 ```
 
-The wrist center is calculated in a similar fashion
+The wrist center position is calculated in a similar fashion:
 ```python
 def get_joints_4_6(rot_matrix):
     theta5 = atan2(sqrt(rot_matrix[0, 2] ** 2 + rot_matrix[2, 2] ** 2), rot_matrix[1, 2])
@@ -114,7 +120,7 @@ def get_joints_4_6(rot_matrix):
     return theta4, theta5, theta6
 ```
 
-After the transformations are done outside the loop, we calculate the spherical wrist's rotation matrix:
+After the transformations are done outside the loop, we calculate the spherical wrist's rotation matrix to get the orientation:
 ```python
             R_EE = R_E.subs({"r": roll, "p": pitch, "y": yaw})
             End_effector = Matrix([[px], [py], [pz]])
@@ -129,7 +135,7 @@ After the transformations are done outside the loop, we calculate the spherical 
             R3_6 = R0_3.inv("LU") * R_EE
 ```
 
-With the (already corrected) rotation matrix, retrieving the euler angles is simple via the function above:
+With the (already corrected) rotation matrix, retrieving the euler angles is done via the function above:
 ```python
 theta4, theta5, theta6 = get_joints_4_6(rot_matrix=R3_6)
 ```
