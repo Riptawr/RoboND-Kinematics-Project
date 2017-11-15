@@ -210,6 +210,16 @@ Since the planner already provides us with the poses for each step in the reques
             End_effector = Matrix([[px], [py], [pz]])
             WC = End_effector - 0.303 * R_EE[:, 2]
 
+To get the last three joint angles we recall the following:
+- the full transformation matrix from base to gripper link can be retrieved by composing the individual translations T0 -> T_6
+combined with their respective rotations
+- we already solved for the first three angles
+- we also calculated the homogeneous transform from base to gripper link
+
+Therefore we can evaluate the last three angles via the following:
+```python
+R3_6 = R0_3.inv("LU") * R_EE
+```
 
 ### Project Implementation
 
