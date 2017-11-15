@@ -5,6 +5,8 @@
 [image1]: ./misc_images/result.png
 [image2]: ./misc_images/attempt_at_optimizing.png
 [image3]: ./misc_images/kuka-dh.png
+[image4]: ./misc_images/ik-top-down.png
+[image5]: ./misc_images/ik-side.png
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/972/view) Points
 ### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
@@ -79,6 +81,11 @@ The correction requires rotating the gripper's coordinate frame by 180 degrees a
 Since the IK problem can be divided into two steps. I opted to create separate functions for positioning and orientation using sympy.
 
 Given the wrist center position matrix, joint angles for first three links can be calculates as a right triangle:
+
+![kr210-ik-top-down][image4]
+
+![kr210-ik-side][image5]
+
 ```python
 def get_joints_1_3(WC):
     # Avoiding re-eval of costly sympy variables inside loop
@@ -107,6 +114,7 @@ def get_joints_1_3(WC):
 ```
 
 The wrist center position is calculated in a similar fashion:
+
 ```python
 def get_joints_4_6(rot_matrix):
     theta5 = atan2(sqrt(rot_matrix[0, 2] ** 2 + rot_matrix[2, 2] ** 2), rot_matrix[1, 2])
